@@ -188,8 +188,8 @@ uint16_t ADC_ReadChannel(uint8_t channel, bool single_ended){
   * @retval None : the number of counts for the PMW
   */
 uint32_t ADC_output_to_PMW_counts(uint16_t ADC_output){
-	uint16_t PMW_min_count = htim1.Init.Period / 20;
-	uint16_t PMW_max_count = htim1.Init.Period / 10;
+	uint16_t PMW_min_count = __HAL_TIM_GET_AUTORELOAD(&htim1) / 20;
+	uint16_t PMW_max_count = __HAL_TIM_GET_AUTORELOAD(&htim1) / 10;
 	return ((uint32_t) ADC_output * (PMW_max_count - PMW_min_count) / MAX_ADC_COUNT) + PMW_min_count;
 }
 /* USER CODE END 4 */
