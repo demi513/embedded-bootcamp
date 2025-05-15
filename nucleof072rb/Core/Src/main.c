@@ -19,12 +19,14 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "spi.h"
+#include "tim.h"
 #include "usart.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdbool.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -34,6 +36,9 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define ADC_CS_GPIO_Port GPIOB
+#define ADC_CS_Pin		 GPIO_PIN_8
+#define MAX_ADC_COUNT 0x3FF
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -50,7 +55,8 @@
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
-
+uint16_t ADC_ReadChannel(uint8_t channel, bool single_ended);
+uint32_t ADC_output_to_PMW_counts(uint16_t ADC_output);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -65,7 +71,6 @@ void SystemClock_Config(void);
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -87,14 +92,22 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_USART2_UART_Init();
+  MX_SPI1_Init();
+  MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
-
+  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);  // Start the PMW
+  HAL_GPIO_WritePin(ADC_CS_GPIO_Port, ADC_CS_Pin, GPIO_PIN_SET); // Set Chip select to high
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+
+	  uint16_t adc_output = ADC_ReadChannel(0, true);
+	  uint32_t pmw_counts = ADC_output_to_PMW_counts(adc_output);
+	  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, pmw_counts);
+	  HAL_Delay(10);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -143,7 +156,42 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+/**
+  * @brief get ADC single-value or differential on a specific channel
+  * @param[in]  channel: channel to read from
+  * @param[in]  single_ended: single-ended or differential
+  * @retval     : ADC value on specified channel and mode
+  */
+uint16_t ADC_ReadChannel(uint8_t channel, bool single_ended){
+	HAL_StatusTypeDef status = HAL_OK;
+	uint8_t tx[3], rx[3];
+	tx[0] = 0x01;                 // Start bit
+	tx[1] = (single_ended << 7)   // Single-ended bit
+		  | ((channel & 0x07) << 4);  // Channel bits
+	tx[2] = 0x00;
 
+	HAL_GPIO_WritePin(ADC_CS_GPIO_Port, ADC_CS_Pin, GPIO_PIN_RESET);
+
+	status = HAL_SPI_TransmitReceive(&hspi1, tx, rx, 3, 100);
+	if (HAL_OK != status){
+		;// handle errors
+	}
+
+	HAL_GPIO_WritePin(ADC_CS_GPIO_Port, ADC_CS_Pin, GPIO_PIN_SET);
+	return (rx[1] & 0x03) << 8 | rx[2];
+}
+
+
+/**
+  * @brief Convert ADC_output to number of counts for PMW
+  * @param[in]   : the value outputed by the ADC
+  * @retval None : the number of counts for the PMW
+  */
+uint32_t ADC_output_to_PMW_counts(uint16_t ADC_output){
+	uint16_t PMW_min_count = htim1.Init.Period / 20;
+	uint16_t PMW_max_count = htim1.Init.Period / 10;
+	return ((uint32_t) ADC_output * (PMW_max_count - PMW_min_count) / MAX_ADC_COUNT) + PMW_min_count;
+}
 /* USER CODE END 4 */
 
 /**
